@@ -1,0 +1,9 @@
+<fop version="1.0">
+  <accessibility>true</accessibility>
+  <renderers>
+    <renderer mime="application/pdf">
+      <pdf-a-mode>PDF/A-1a</pdf-a-mode>
+      <version>2.0</version>
+    </renderer>
+  </renderers>
+</fop>

@@ -2,13 +2,19 @@ package poc;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.fop.apps.FOUserAgent;
+import org.apache.fop.apps.FopFactory;
+import org.apache.fop.apps.FopFactoryBuilder;
 import org.docx4j.Docx4J;
 import org.docx4j.TraversalUtil;
 import org.docx4j.XmlUtils;
+import org.docx4j.convert.out.FOSettings;
+import org.docx4j.convert.out.fo.renderers.FORendererApacheFOP;
 import org.docx4j.finders.RangeFinder;
 import org.docx4j.jaxb.Context;
 import org.docx4j.model.fields.merge.DataFieldName;
@@ -25,7 +31,7 @@ import org.slf4j.LoggerFactory;
 
 public class Doc4fPoc {
 
-    private static final boolean DELETE_BOOKMARK = true;
+    private static final boolean DELETE_BOOKMARK = false;
     protected static Logger log = LoggerFactory.getLogger(Doc4fPoc.class);
     private static final org.docx4j.wml.ObjectFactory factory = Context.getWmlObjectFactory();
 
@@ -33,8 +39,8 @@ public class Doc4fPoc {
     public static void main(String[] args) throws Exception {
 
         // Load the .docx file
-        WordprocessingMLPackage wordMLPackage = Docx4J.load(new File("C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\TEST.docx"));
-//        WordprocessingMLPackage wordMLPackage = Docx4J.load(new File("C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\brd_test_original.docx"));
+//        WordprocessingMLPackage wordMLPackage = Docx4J.load(new File("C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\TEST.docx"));
+        WordprocessingMLPackage wordMLPackage = Docx4J.load(new File("C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\brd_test_original.docx"));
 //        WordprocessingMLPackage wordMLPackage = Docx4J.load(new File("C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\bookmarks_replaced.docx"));
         MainDocumentPart mainDocumentPart = wordMLPackage.getMainDocumentPart();
 
@@ -95,9 +101,19 @@ public class Doc4fPoc {
 //        }
 
         // Export to pdf
-        FileOutputStream pdfOutput = new FileOutputStream("output.pdf");
 
-        Docx4J.toPDF(wordMLPackage, pdfOutput);
+        OutputStream pdfOutput = new FileOutputStream("output.pdf");
+        FOSettings foSettings = new FOSettings(wordMLPackage);
+        FopFactoryBuilder fopFactoryBuilder = FORendererApacheFOP.getFopFactoryBuilder(foSettings);
+        FopFactory fopFactory = fopFactoryBuilder.build();
+//        foSettings.setFopConfig(fopFactory.newFop(MimeConstants.MIME_PDF, pdfOutput));
+
+        FOUserAgent foUserAgent = FORendererApacheFOP.getFOUserAgent(foSettings, fopFactory);
+        // configure foUserAgent as desired
+        foUserAgent.setTitle("my title");
+        foUserAgent.getRendererOptions().put("version", "2.0");
+
+        Docx4J.toFO(foSettings, pdfOutput, Docx4J.FLAG_EXPORT_PREFER_XSL);
 
         pdfOutput.flush();
         pdfOutput.close();
@@ -115,7 +131,6 @@ public class Doc4fPoc {
             if (bm.getName() == null) continue;
             String value = data.get(new DataFieldName(bm.getName()));
             if (value == null) continue;
-            System.out.println(bm.getName() + ", " + value);
 
             try {
                 // Can't just remove the object from the parent,
@@ -150,7 +165,6 @@ public class Doc4fPoc {
                     }
                     i++;
                 }
-                System.out.println(rangeStart + ", " + rangeEnd);
 
                 if (rangeStart > 0 && rangeEnd >= rangeStart) {
 
@@ -160,6 +174,9 @@ public class Doc4fPoc {
                             theList.remove(j);
                         }
                     }
+
+                    // Delete field before bookmark
+                    theList.remove(0);
 
                     // now add a run
                     org.docx4j.wml.R run = factory.createR();
@@ -177,4 +194,5 @@ public class Doc4fPoc {
 
 
     }
+
 }
