@@ -19,6 +19,7 @@ import org.docx4j.convert.out.FOSettings;
 import org.docx4j.convert.out.fo.renderers.FORendererApacheFOP;
 import org.docx4j.finders.RangeFinder;
 import org.docx4j.jaxb.Context;
+import org.docx4j.jaxb.XPathBinderAssociationIsPartialException;
 import org.docx4j.model.fields.merge.DataFieldName;
 import org.docx4j.model.table.TblFactory;
 import org.docx4j.openpackaging.packages.WordprocessingMLPackage;
@@ -31,10 +32,11 @@ import org.docx4j.wml.CTRel;
 import org.docx4j.wml.CTTblPrBase;
 import org.docx4j.wml.ContentAccessor;
 import org.docx4j.wml.Document;
+import org.docx4j.wml.Jc;
 import org.docx4j.wml.P;
+import org.docx4j.wml.PPr;
 import org.docx4j.wml.R;
 import org.docx4j.wml.Tbl;
-import org.docx4j.wml.TblGrid;
 import org.docx4j.wml.TblPr;
 import org.docx4j.wml.TblWidth;
 import org.docx4j.wml.Tc;
@@ -44,11 +46,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import jakarta.xml.bind.JAXBElement;
+import jakarta.xml.bind.JAXBException;
 
-public class Doc4fPoc {
+public class Docx4jPoc {
 
     private static final boolean DELETE_BOOKMARK = false;
-    protected static Logger log = LoggerFactory.getLogger(Doc4fPoc.class);
+    protected static Logger log = LoggerFactory.getLogger(Docx4jPoc.class);
     private static final org.docx4j.wml.ObjectFactory factory = Context.getWmlObjectFactory();
 
 
@@ -56,7 +59,8 @@ public class Doc4fPoc {
 
 
         // Load the .docx file
-        WordprocessingMLPackage wordMLPackage = Docx4J.load(new File("C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\test_document_with_bookmarks.docx"));
+        WordprocessingMLPackage wordMLPackage =
+                Docx4J.load(new File("C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\test_document_with_bookmarks.docx"));
         WordprocessingMLPackage secondDocPackage = Docx4J.load(new File("C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\TEST.docx"));
         MainDocumentPart mainDocumentPart = wordMLPackage.getMainDocumentPart();
 
@@ -64,16 +68,43 @@ public class Doc4fPoc {
         JAXBElement<CTRel> subdoc = createSubdocLink(mainDocumentPart, "C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\TEST.docx");
         org.docx4j.wml.ObjectFactory wmlFactory = Context.getWmlObjectFactory();
         org.docx4j.wml.P paragraph = wmlFactory.createP();
-        paragraph.getContent().add( subdoc );
+        paragraph.getContent().add(subdoc);
         mainDocumentPart.addObject(paragraph);
-        // coping subdocument content
+
+        // copying subdocument content
         copySubDocumentContent(wordMLPackage, secondDocPackage);
 
         // Find all bookmarks
         findAllBookmarks(mainDocumentPart);
 
-        // Replace bookmarks with text and tables
+        // Replace bookmarks with text
         replaceBookmarks(wordMLPackage, mainDocumentPart);
+
+        // Create table out of list - each list represents a table row
+        Tbl table1 = createTable(List.of(
+                List.of("Name", "Phone Number", "Email", "Test"),
+                List.of("Alice Johnson", "555-123-4567", "alice@example.com", "test1"),
+                List.of("Bob Smith", "555-987-6543", "bob@example.com", "test2")
+        ));
+
+        // Replace bookmarks with table
+        replaceBookmarkWithTable(mainDocumentPart.getContents().getBody(), "BOOKMARK_TABLE", table1);
+
+        // Replace variables with text
+        HashMap<String, String> mappings = new HashMap<>();
+        mappings.put("NAME", "Jan Kowalski");
+        mappings.put("PHONE", "518-069-938");
+        mainDocumentPart.variableReplace(mappings);
+
+        // Replace variable with table
+        Tbl table2 = createTable(List.of(
+                List.of("Name", "Phone Number"),
+                List.of("Alice Johnson", "555-123-4567"),
+                List.of("Bob Smith", "555-987-6543"),
+                List.of("Anna Stone", "414-251-1234")
+        ));
+        replaceVariableWithTable(mainDocumentPart, "VARIABLE_TABLE", table2);
+
 
         // Save the modified Word document
         wordMLPackage.save(new File("output.docx"));
@@ -85,6 +116,31 @@ public class Doc4fPoc {
         long endTime = System.currentTimeMillis();
         long duration = (endTime - startTime);
         log.info("Generating PDF duration: " + duration + "ms");
+    }
+
+    public static void replaceVariableWithTable(final MainDocumentPart mainDocumentPart, final String variableName, final Tbl table)
+            throws JAXBException, XPathBinderAssociationIsPartialException {
+
+        String xpath = "//w:t";
+        List<Object> list = mainDocumentPart.getJAXBNodesViaXPath(xpath, false);
+        for (Object o : list) {
+            if (o instanceof JAXBElement) {
+                JAXBElement element = (JAXBElement) o;
+                Text text = (Text) element.getValue();
+                if (!text.getValue().contains(variableName)) {
+                    continue;
+                }
+                R r = (R) text.getParent();
+                P p = (P) r.getParent();
+                Body b = (Body) p.getParent();
+                int index = b.getContent().indexOf(p);
+                if (index != -1 && index < b.getContent().size() - 1) {
+                    // Replace the paragraph with the table
+                    b.getContent().remove(index); // Remove the paragraph
+                    b.getContent().add(index, table); // Insert the table in place of the paragraph
+                }
+            }
+        }
     }
 
     public static JAXBElement<CTRel> createSubdocLink(MainDocumentPart mdp,
@@ -100,7 +156,7 @@ public class Doc4fPoc {
                     new org.docx4j.relationships.ObjectFactory();
 
             org.docx4j.relationships.Relationship rel = factory.createRelationship();
-            rel.setType( Namespaces.SUBDOCUMENT  );
+            rel.setType(Namespaces.SUBDOCUMENT);
             rel.setTarget(subdocName);
             rel.setTargetMode("External");
 
@@ -148,15 +204,18 @@ public class Doc4fPoc {
         FopFactory fopFactory = fopFactoryBuilder.build();
 
         FOUserAgent foUserAgent = FORendererApacheFOP.getFOUserAgent(foSettings, fopFactory);
-        // configure foUserAgent
         foUserAgent.setTitle("my title");
         foUserAgent.getRendererOptions().put("version", "2.0");
 
         Docx4J.toFO(foSettings, pdfOutput, Docx4J.FLAG_EXPORT_PREFER_XSL);
-//        Docx4J.toFO(foSettings, pdfOutput, Docx4J.FLAG_EXPORT_PREFER_NONXSL); // little bit less demanding option
+        // Docx4J.toFO(foSettings, pdfOutput, Docx4J.FLAG_EXPORT_PREFER_NONXSL); // little bit less demanding option
 
         // Use word/powerpoint to export to pdf
 //        Documents4jLocalServices exporter = new Documents4jLocalServices();
+//        exporter.export(wordMLPackage, pdfOutput);
+
+//        Docx4jProperties.setProperty("docx4j.convert.out.documents4j.remote.Uri", "http://localhost:9998");
+//        Documents4jRemoteServices exporter = new Documents4jRemoteServices();
 //        exporter.export(wordMLPackage, pdfOutput);
 
         pdfOutput.flush();
@@ -181,7 +240,6 @@ public class Doc4fPoc {
         map.put(new DataFieldName("AUTH_7_10"), "Exposure 4");
         map.put(new DataFieldName("AUTH_10_15"), "Exposure 5");
         map.put(new DataFieldName("AUTH_15"), "Exposure 6");
-
         map.put(new DataFieldName("CLN_RDO"), "Client RDO");
         map.put(new DataFieldName("CLN_CLASSICAL"), "Client classical");
         map.put(new DataFieldName("CLN_SG_L"), "Client total SG lease");
@@ -189,7 +247,6 @@ public class Doc4fPoc {
         map.put(new DataFieldName("CLN_INDIVIDUAL"), "Client related individuals");
         map.put(new DataFieldName("CLN_RLI"), "Client total RLI");
         map.put(new DataFieldName("CLN_CVAR"), "Client total CVaR");
-
         map.put(new DataFieldName("ECG_RDO"), "ECG RDO");
         map.put(new DataFieldName("ECG_CLASSICAL"), "ECG classical");
         map.put(new DataFieldName("ECG_SG_L"), "ECG total SG lease");
@@ -197,32 +254,24 @@ public class Doc4fPoc {
         map.put(new DataFieldName("ECG_INDIVIDUAL"), "ECG related individuals");
         map.put(new DataFieldName("ECG_RLI"), "ECG total RLI");
         map.put(new DataFieldName("ECG_CVAR"), "ECG total CVaR");
-
         map.put(new DataFieldName("SIGNER_NAME_1"), "Jan Kowalski");
         map.put(new DataFieldName("SIGNER_NAME_2"), "Piotr Nowak");
         map.put(new DataFieldName("SIGNER_NAME_3"), "Zbigniew Reczek");
         map.put(new DataFieldName("SIGNER_NAME_4"), "Krzysztof Futro");
-
         map.put(new DataFieldName("SIGNER_POSITION_1"), "CEO");
         map.put(new DataFieldName("SIGNER_POSITION_2"), "Manager");
         map.put(new DataFieldName("SIGNER_POSITION_3"), "Product Owner");
         map.put(new DataFieldName("SIGNER_POSITION_4"), "Product Owner");
-
         map.put(new DataFieldName("APPROVAL_NAME"), "Jan Kowalski");
         map.put(new DataFieldName("APPROVAL_POSITION"), "CEO");
 
         Document wmlDocumentEl = mainDocumentPart.getJaxbElement();
         Body body = wmlDocumentEl.getBody();
 
-        Doc4fPoc bti = new Doc4fPoc();
-
-        bti.replaceBookmarkContents(body.getContent(), map);
-
-        // Replacing bookmark with some table
-        bti.replaceBookmarkWithTable(body, "TEST_LIST");
+        replaceBookmarkContents(body.getContent(), map);
     }
 
-    private void replaceBookmarkContents(final List<Object> paragraphs, final Map<DataFieldName, String> data) throws Exception {
+    private static void replaceBookmarkContents(final List<Object> paragraphs, final Map<DataFieldName, String> data) throws Exception {
 
         RangeFinder rt = new RangeFinder();
 //        RangeFinder rt = new RangeFinder("CTBookmark", "CTMarkupRange");
@@ -296,7 +345,7 @@ public class Doc4fPoc {
         }
     }
 
-    private void replaceBookmarkWithTable(final Body body, final String bookmarkName) throws Exception {
+    private static void replaceBookmarkWithTable(final Body body, final String bookmarkName, final Tbl table) throws Exception {
         var paragraphs = body.getContent();
         RangeFinder rt = new RangeFinder();
         new TraversalUtil(paragraphs, rt);
@@ -307,17 +356,6 @@ public class Doc4fPoc {
                 continue;
             }
             try {
-                // Get the parent of the paragraph
-
-
-                // Create a table to replace the paragraph
-                Tbl table = createClientTable(List.of(
-                        List.of("Name", "Phone Number", "Email"),
-                        List.of("Alice Johnson", "555-123-4567", "alice@example.com"),
-                        List.of("Bob Smith", "555-987-6543", "bob@example.com")
-                        // Add more client data as needed
-                ));
-
                 // Find the index of the paragraph containing the bookmark within the body
                 int index = body.getContent().indexOf(bm.getParent());
                 if (index != -1 && index < body.getContent().size() - 1) {
@@ -332,30 +370,29 @@ public class Doc4fPoc {
         }
     }
 
-    public static Tbl createClientTable(List<List<String>> clients) {
+    public static Tbl createTable(List<List<String>> tableData) {
         try {
             // Create a table
-            Tbl table = TblFactory.createTable(clients.size(), clients.get(0).size(), 4000);
+            Tbl table = TblFactory.createTable(tableData.size(), tableData.get(0).size(), 2000);
 
             // setting table grid and style taken from http://webapp.docx4java.org/OnlineDemo/PartsList.html generated
             TblPr tblpr = factory.createTblPr();
             // Create object for tblStyle
             CTTblPrBase.TblStyle tblprbasetblstyle = factory.createCTTblPrBaseTblStyle();
             tblpr.setTblStyle(tblprbasetblstyle);
-            tblprbasetblstyle.setVal( "Tabela-Siatka");
+            tblprbasetblstyle.setVal("Tabela-Siatka");
             // Create object for tblW
             TblWidth tblwidth = factory.createTblWidth();
             tblpr.setTblW(tblwidth);
-            tblwidth.setW( BigInteger.valueOf( 0) );
-            tblwidth.setType( "auto");
+            tblwidth.setW(BigInteger.valueOf(0));
+            tblwidth.setType("auto");
             table.setTblPr(tblpr);
 
 
-            table.setTblGrid(new TblGrid());
             List<Object> rows = table.getContent();
 
-            for (int i = 0; i < clients.size(); i++) {
-                var client = clients.get(i);
+            for (int i = 0; i < tableData.size(); i++) {
+                var client = tableData.get(i);
                 Tr tr = (Tr) rows.get(i);
                 List<Object> cells = tr.getContent();
                 for (int j = 0; j < client.size(); j++) {
@@ -367,9 +404,16 @@ public class Doc4fPoc {
                     text.setValue(client.get(j));
                     r.getContent().add(text);
                     p.getContent().add(r);
+
+                    // Centering cells, generated using demo webapp
+                    PPr ppr = factory.createPPr();
+                    Jc jc = factory.createJc();
+                    jc.setVal(org.docx4j.wml.JcEnumeration.CENTER);
+                    ppr.setJc(jc);
+                    p.setPPr(ppr);
+
                     td.getContent().add(p);
                 }
-
             }
 
             return table;
