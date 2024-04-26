@@ -1,22 +1,15 @@
 package poc;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.OutputStream;
 import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import org.apache.fop.apps.FOUserAgent;
-import org.apache.fop.apps.FopFactory;
-import org.apache.fop.apps.FopFactoryBuilder;
 import org.docx4j.Docx4J;
 import org.docx4j.TraversalUtil;
 import org.docx4j.XmlUtils;
-import org.docx4j.convert.out.FOSettings;
-import org.docx4j.convert.out.fo.renderers.FORendererApacheFOP;
 import org.docx4j.finders.RangeFinder;
 import org.docx4j.jaxb.Context;
 import org.docx4j.jaxb.XPathBinderAssociationIsPartialException;
@@ -47,6 +40,8 @@ import org.slf4j.LoggerFactory;
 
 import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.bind.JAXBException;
+import poc.converters.Converter;
+import poc.converters.FOConverter;
 
 public class Docx4jPoc {
 
@@ -57,19 +52,22 @@ public class Docx4jPoc {
 
     public static void main(String[] args) throws Exception {
 
+        Converter pdfConverter = new FOConverter();
+
+        String inputFilePath = "C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\test_document.docx";
+        String inputFilePath2 = "C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\TEST.docx";
 
         // Load the .docx file
-        WordprocessingMLPackage wordMLPackage =
-                Docx4J.load(new File("C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\test_document_with_bookmarks.docx"));
-        WordprocessingMLPackage secondDocPackage = Docx4J.load(new File("C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\TEST.docx"));
+        WordprocessingMLPackage wordMLPackage = Docx4J.load(new File(inputFilePath));
+        WordprocessingMLPackage secondDocPackage = Docx4J.load(new File(inputFilePath2));
         MainDocumentPart mainDocumentPart = wordMLPackage.getMainDocumentPart();
 
-        // adding sub document link
-        JAXBElement<CTRel> subdoc = createSubdocLink(mainDocumentPart, "C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\TEST.docx");
-        org.docx4j.wml.ObjectFactory wmlFactory = Context.getWmlObjectFactory();
-        org.docx4j.wml.P paragraph = wmlFactory.createP();
-        paragraph.getContent().add(subdoc);
-        mainDocumentPart.addObject(paragraph);
+        // adding sub document link (can break pdf generation!)
+//        JAXBElement<CTRel> subdoc = createSubdocLink(mainDocumentPart, "C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\TEST.docx");
+//        org.docx4j.wml.ObjectFactory wmlFactory = Context.getWmlObjectFactory();
+//        org.docx4j.wml.P paragraph = wmlFactory.createP();
+//        paragraph.getContent().add(subdoc);
+//        mainDocumentPart.addObject(paragraph);
 
         // copying subdocument content
         copySubDocumentContent(wordMLPackage, secondDocPackage);
@@ -92,8 +90,10 @@ public class Docx4jPoc {
 
         // Replace variables with text
         HashMap<String, String> mappings = new HashMap<>();
-        mappings.put("NAME", "Jan Kowalski");
-        mappings.put("PHONE", "518-069-938");
+        mappings.put("NAME_1", "Jan Kowalski");
+        mappings.put("NAME_2", "Jan Kowalski");
+        mappings.put("POSITION_2", "CEO");
+        mappings.put("POSITION_2", "PO");
         mainDocumentPart.variableReplace(mappings);
 
         // Replace variable with table
@@ -109,13 +109,8 @@ public class Docx4jPoc {
         // Save the modified Word document
         wordMLPackage.save(new File("output.docx"));
 
-        long startTime = System.currentTimeMillis();
-        // Export to pdf
-        exportToPdf(wordMLPackage);
+        pdfConverter.convert(inputFilePath, "output.pdf");
 
-        long endTime = System.currentTimeMillis();
-        long duration = (endTime - startTime);
-        log.info("Generating PDF duration: " + duration + "ms");
     }
 
     public static void replaceVariableWithTable(final MainDocumentPart mainDocumentPart, final String variableName, final Tbl table)
@@ -193,33 +188,6 @@ public class Docx4jPoc {
                 firstDocPackage.getMainDocumentPart().getContent().add(child);
             }
         }
-    }
-
-    private static void exportToPdf(final WordprocessingMLPackage wordMLPackage) throws Exception {
-        OutputStream pdfOutput = new FileOutputStream("output.pdf");
-
-        // use FO converter
-        FOSettings foSettings = new FOSettings(wordMLPackage);
-        FopFactoryBuilder fopFactoryBuilder = FORendererApacheFOP.getFopFactoryBuilder(foSettings);
-        FopFactory fopFactory = fopFactoryBuilder.build();
-
-        FOUserAgent foUserAgent = FORendererApacheFOP.getFOUserAgent(foSettings, fopFactory);
-        foUserAgent.setTitle("my title");
-        foUserAgent.getRendererOptions().put("version", "2.0");
-
-        Docx4J.toFO(foSettings, pdfOutput, Docx4J.FLAG_EXPORT_PREFER_XSL);
-        // Docx4J.toFO(foSettings, pdfOutput, Docx4J.FLAG_EXPORT_PREFER_NONXSL); // little bit less demanding option
-
-        // Use word/powerpoint to export to pdf
-//        Documents4jLocalServices exporter = new Documents4jLocalServices();
-//        exporter.export(wordMLPackage, pdfOutput);
-
-//        Docx4jProperties.setProperty("docx4j.convert.out.documents4j.remote.Uri", "http://localhost:9998");
-//        Documents4jRemoteServices exporter = new Documents4jRemoteServices();
-//        exporter.export(wordMLPackage, pdfOutput);
-
-        pdfOutput.flush();
-        pdfOutput.close();
     }
 
     private static void findAllBookmarks(final MainDocumentPart mainDocumentPart) throws Exception {

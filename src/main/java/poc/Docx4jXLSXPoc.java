@@ -1,7 +1,11 @@
 package poc;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.InputStream;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.commons.lang3.StringUtils;
@@ -11,6 +15,9 @@ import org.docx4j.openpackaging.parts.PartName;
 import org.docx4j.openpackaging.parts.SpreadsheetML.JaxbSmlPart;
 import org.docx4j.openpackaging.parts.SpreadsheetML.WorkbookPart;
 import org.docx4j.openpackaging.parts.SpreadsheetML.WorksheetPart;
+import org.jodconverter.core.office.OfficeException;
+import org.jodconverter.local.JodConverter;
+import org.jodconverter.local.office.LocalOfficeManager;
 import org.xlsx4j.exceptions.Xlsx4jException;
 import org.xlsx4j.org.apache.poi.ss.usermodel.DataFormatter;
 import org.xlsx4j.sml.Cell;
@@ -32,14 +39,45 @@ public class Docx4jXLSXPoc {
 
         SpreadsheetMLPackage mlPackage = SpreadsheetMLPackage.load(new File(inputfilepath));
 
-
         // Replace variables with text
         replaceVariables(mlPackage);
+
 
         mlPackage.save(new File(outputfilepath));
 
         // get data from sheet
-        getClientInfo(mlPackage);
+        getDataFromCells(mlPackage);
+
+
+        // save to pdf
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        mlPackage.save(byteArrayOutputStream);
+        InputStream inputStreamWithModifiedDocx = new ByteArrayInputStream(byteArrayOutputStream.toByteArray());
+
+        LocalOfficeManager officeManager = LocalOfficeManager.builder().install().build();
+        long startTime2 = 0;
+        long endTime2 = 0;
+        try {
+            officeManager.start();
+
+            startTime2 = System.currentTimeMillis();
+            // Perform the conversion
+            JodConverter.convert(inputStreamWithModifiedDocx).to(new File("xlsxtopdf.pdf")).execute();
+
+            endTime2 = System.currentTimeMillis();
+
+
+            System.out.println("Conversion completed successfully.");
+        } catch (OfficeException e) {
+            System.err.println("Error converting file: " + e.getMessage());
+        } finally {
+            // Stop the office manager
+            if (officeManager != null) {
+                officeManager.stop();
+            }
+        }
+        long duration2 = (endTime2 - startTime2);
+        System.out.println("Converting time: " + duration2);
     }
 
     private static void replaceVariables(final SpreadsheetMLPackage mlPackage) throws Docx4JException, JAXBException {
@@ -55,9 +93,10 @@ public class Docx4jXLSXPoc {
         smlPart.variableReplace(mappings);
     }
 
-    private static void getClientInfo(final SpreadsheetMLPackage mlPackage) throws Xlsx4jException, Docx4JException {
+    private static void getDataFromCells(final SpreadsheetMLPackage mlPackage) throws Xlsx4jException, Docx4JException {
         WorkbookPart workbookPart = mlPackage.getWorkbookPart();
         WorksheetPart sheet = workbookPart.getWorksheet(0);
+
 
         Worksheet ws = sheet.getContents();
         SheetData sheetData = ws.getSheetData();
@@ -70,24 +109,24 @@ public class Docx4jXLSXPoc {
         );
 
         Client client = Client.builder()
-                .firstName(getCell(sheetData, clientMap.get("firstName")))
-                .lastName(getCell(sheetData, clientMap.get("lastName")))
-                .email(getCell(sheetData, clientMap.get("email")))
-                .phone(getCell(sheetData, clientMap.get("phone")))
+                .firstName(getCellContent(sheetData, clientMap.get("firstName")))
+                .lastName(getCellContent(sheetData, clientMap.get("lastName")))
+                .email(getCellContent(sheetData, clientMap.get("email")))
+                .phone(getCellContent(sheetData, clientMap.get("phone")))
                 .build();
 
         System.out.println(client);
     }
 
-    private static String getCell(final SheetData sheetData, final String cell) {
+    private static String getCellContent(final SheetData sheetData, final String cellName) {
         for (Row row : sheetData.getRow()) {
             for (Cell c : row.getC()) {
-                if (StringUtils.equals(c.getR(), cell)) {
+                if (StringUtils.equals(c.getR(), cellName)) {
                     return formatter.formatCellValue(c);
                 }
             }
         }
-        throw new RuntimeException("Cell content not found for cell: " + cell);
+        throw new RuntimeException("Cell content not found for cell: " + cellName);
     }
 
 }
