@@ -2,6 +2,7 @@ package poc.converters;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -43,5 +44,10 @@ public class Convertapi implements Converter {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    @Override
+    public void convert(final InputStream inputStream, final OutputStream outputStream) {
+
     }
 }

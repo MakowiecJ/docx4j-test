@@ -1,6 +1,10 @@
 package poc;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStream;
 import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.List;
@@ -29,6 +33,7 @@ import org.docx4j.wml.Jc;
 import org.docx4j.wml.P;
 import org.docx4j.wml.PPr;
 import org.docx4j.wml.R;
+import org.docx4j.wml.RPr;
 import org.docx4j.wml.Tbl;
 import org.docx4j.wml.TblPr;
 import org.docx4j.wml.TblWidth;
@@ -42,6 +47,7 @@ import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.bind.JAXBException;
 import poc.converters.Converter;
 import poc.converters.FOConverter;
+import poc.converters.LibreConverter;
 
 public class Docx4jPoc {
 
@@ -52,7 +58,7 @@ public class Docx4jPoc {
 
     public static void main(String[] args) throws Exception {
 
-        Converter pdfConverter = new FOConverter();
+        LibreConverter pdfConverter = new LibreConverter();
 
         String inputFilePath = "C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\test_document.docx";
         String inputFilePath2 = "C:\\Workspace\\test\\docx4j-test\\src\\main\\resources\\TEST.docx";
@@ -108,8 +114,16 @@ public class Docx4jPoc {
 
         // Save the modified Word document
         wordMLPackage.save(new File("output.docx"));
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        wordMLPackage.save(byteArrayOutputStream);
+        ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(byteArrayOutputStream.toByteArray());
 
-        pdfConverter.convert(inputFilePath, "output.pdf");
+        OutputStream pdfOutputStream = new FileOutputStream("output.pdf");
+
+        pdfConverter.convert(byteArrayInputStream, pdfOutputStream);
+
+        // Needed for libre office converter to stop!
+        pdfConverter.stopOffice();
 
     }
 
@@ -242,19 +256,15 @@ public class Docx4jPoc {
     private static void replaceBookmarkContents(final List<Object> paragraphs, final Map<DataFieldName, String> data) throws Exception {
 
         RangeFinder rt = new RangeFinder();
-//        RangeFinder rt = new RangeFinder("CTBookmark", "CTMarkupRange");
         new TraversalUtil(paragraphs, rt);
 
         for (CTBookmark bm : rt.getStarts()) {
 
-            // do we have data for this one?
             if (bm.getName() == null) continue;
             String value = data.get(new DataFieldName(bm.getName()));
             if (value == null) continue;
 
             try {
-                // Can't just remove the object from the parent,
-                // since in the parent, it may be wrapped in a JAXBElement
                 List<Object> theList = null;
                 if (bm.getParent() instanceof P) {
                     theList = ((ContentAccessor) (bm.getParent())).getContent();
@@ -262,50 +272,22 @@ public class Docx4jPoc {
                     continue;
                 }
 
-                int rangeStart = -1;
-                int rangeEnd = -1;
-                int i = 0;
-                for (Object ox : theList) {
-                    Object listEntry = XmlUtils.unwrap(ox);
-                    if (listEntry.equals(bm)) {
-                        if (DELETE_BOOKMARK) {
-                            rangeStart = i;
-                        } else {
-                            rangeStart = i + 1;
-                        }
-                    } else if (listEntry instanceof CTMarkupRange) {
-                        if (((CTMarkupRange) listEntry).getId().equals(bm.getId())) {
-                            if (DELETE_BOOKMARK) {
-                                rangeEnd = i;
-                            } else {
-                                rangeEnd = i > rangeStart ? i - 1 : i;     // handle empty bookmark case
-                            }
-                            break;
-                        }
-                    }
-                    i++;
-                }
+                // Copy run formatting
+                RPr rpr = ((R) theList.get(0)).getRPr();
 
-                if (rangeStart > 0 && rangeEnd >= rangeStart) {
 
-                    // Delete the bookmark range
-                    if (rangeEnd > rangeStart) {
-                        for (int j = rangeEnd; j >= rangeStart; j--) {
-                            theList.remove(j);
-                        }
-                    }
+                theList.clear();
 
-                    // Delete field before bookmark
-                    theList.remove(0);
 
-                    // now add a run
-                    org.docx4j.wml.R run = factory.createR();
-                    org.docx4j.wml.Text t = factory.createText();
-                    run.getContent().add(t);
-                    t.setValue(value);
+                // now add a run
+                org.docx4j.wml.R run = factory.createR();
+                org.docx4j.wml.Text t = factory.createText();
+                run.getContent().add(rpr);
+                run.getContent().add(t);
+                t.setValue(value);
 
-                    theList.add(rangeStart, run);
-                }
+                theList.add(run);
+
 
             } catch (ClassCastException cce) {
                 log.error(cce.getMessage(), cce);

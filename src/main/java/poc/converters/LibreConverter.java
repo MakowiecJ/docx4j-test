@@ -2,6 +2,7 @@ package poc.converters;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 
 import org.jodconverter.core.document.DefaultDocumentFormatRegistry;
@@ -29,6 +30,19 @@ public class LibreConverter implements Converter {
             FileInputStream inputStream = new FileInputStream(inputFilePath);
             OutputStream outputStream = new FileOutputStream(outputFilePath);
 
+            convert(inputStream, outputStream);
+
+            inputStream.close();
+            outputStream.close();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void convert(final InputStream inputStream, final OutputStream outputStream) {
+        try {
             // Perform the conversion
             JodConverter
                     .convert(inputStream)
@@ -36,9 +50,6 @@ public class LibreConverter implements Converter {
                     .to(outputStream)
                     .as(DefaultDocumentFormatRegistry.PDF)
                     .execute();
-
-            inputStream.close();
-            outputStream.close();
 
         } catch (Exception e) {
             e.printStackTrace();

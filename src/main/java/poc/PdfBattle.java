@@ -1,11 +1,9 @@
 package poc;
 
-import com.convertapi.client.ConvertApi;
-
 import poc.converters.Convertapi;
+import poc.converters.Converter;
 import poc.converters.FOConverter;
 import poc.converters.LibreConverter;
-import poc.converters.Converter;
 import poc.converters.SpireIceConverter;
 import poc.converters.XWPFConverter;
 
